@@ -171,16 +171,29 @@
             });
 
             async function createReminder(data) {
-                const reminderDate = new Date(data.installationDate);
-                reminderDate.setDate(reminderDate.getDate() + parseInt(data.period) - 7);
+    const remindersRef = collection(db, "alert");
+    const q = query(remindersRef, where("contractNumber", "==", data.contractNumber));
+    const querySnapshot = await getDocs(q);
 
-                await addDoc(collection(db, "alert"), {
-                    contractNumber: data.contractNumber,
-                    email: data.email,
-                    reminderDate: reminderDate.toISOString().split("T")[0],
-                    finalizationDate: data.finalizationDate
-                });
-            }
+    const reminderDate = new Date(data.installationDate);
+    reminderDate.setDate(reminderDate.getDate() + parseInt(data.period) - 7);
+
+    if (!querySnapshot.empty) {
+        const reminderDoc = querySnapshot.docs[0];
+        await updateDoc(doc(db, "alert", reminderDoc.id), {
+            email: data.email,
+            reminderDate: reminderDate.toISOString().split("T")[0],
+            finalizationDate: data.finalizationDate
+        });
+    } else {
+        await addDoc(collection(db, "alert"), {
+            contractNumber: data.contractNumber,
+            email: data.email,
+            reminderDate: reminderDate.toISOString().split("T")[0],
+            finalizationDate: data.finalizationDate
+        });
+    }
+}
 
             async function loadReminders() {
                 try {
