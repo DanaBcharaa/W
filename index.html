@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Installment Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Installment Tracker</h1>
+        
+        <div class="form-card">
+            <form id="installment-form">
+                <div class="form-row">
+                    <div class="protected-field">
+                        <label>Contract Number</label>
+                        <input type="text" id="contract-number" required>
+                    </div>
+                    <div class="protected-field">
+                        <label>Email</label>
+                        <input type="email" id="email" required>
+                    </div>
+                    <div>
+                        <label>Contract Date</label>
+                        <input type="date" id="contract-date" required>
+                    </div>
+                    <div>
+                        <label>Quantity</label>
+                        <input type="number" id="quantity" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label>Installation Date</label>
+                        <input type="date" id="installation-date" required>
+                    </div>
+                    <div>
+                        <label>Finalization Date</label>
+                        <input type="date" id="finalization-date" required>
+                    </div>
+                    <div>
+                        <label>Period</label>
+                        <select id="period" required>
+                            <option value="30">30 Days</option>
+                            <option value="60">60 Days</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Comments</label>
+                        <textarea id="comments" rows="1"></textarea>
+                    </div>
+                </div>
+                <button type="submit">Add New Contract</button>
+            </form>
+        </div>
+
+        <h2>Contracts</h2>
+        <div class="table-container">
+            <table id="installments-table">
+                <thead>
+                    <tr>
+                        <th>Contract Number</th>
+                        <th>Email</th>
+                        <th>Contract Date</th>
+                        <th>Quantity</th>
+                        <th>Installation Date</th>
+                        <th>Finalization Date</th>
+                        <th>Period</th>
+                        <th>Comments</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <h2>Reminders</h2>
+        <div class="reminders-container" id="alerts-box"></div>
+
+        <div class="modal" id="contract-modal">
+            <div class="modal-content">
+                <span class="close-modal">&times;</span>
+                <h2>Contract Details</h2>
+                <div class="contract-details" id="modal-contract-details">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, where } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+        const app = initializeApp({
+            apiKey: "AIzaSyDt9ZHjxeAVLJeFMz6hJLZmyUf_jWF9Usg",
+            authDomain: "contract-work1.firebaseapp.com",
+            projectId: "contract-work1",
+            storageBucket: "contract-work1.appspot.com",
+            messagingSenderId: "118035732362",
+            appId: "1:118035732362:web:70c3a0ede47d86b43d9a73"
+        });
+
+        const db = getFirestore(app);
+        document.addEventListener("DOMContentLoaded", () => {
+            const form = document.getElementById("installment-form");
+            const tableBody = document.querySelector("#installments-table tbody");
+            const alertsBox = document.getElementById("alerts-box");
+            const modal = document.getElementById("contract-modal");
+
+            function isOverdue(dateString) {
+                const today = new Date();
+                const reminderDate = new Date(dateString);
+                return reminderDate < today;
+            }
+
+            async function showContractDetails(contractNumber) {
+                const detailsContainer = document.getElementById('modal-contract-details');
+                
+                try {
+                    const contractsRef = collection(db, "info");
+                    const q = query(contractsRef, where("contractNumber", "==", contractNumber));
+                    const querySnapshot = await getDocs(q);
+                    
+                    if (!querySnapshot.empty) {
+                        const contractData = querySnapshot.docs[0].data();
+                        detailsContainer.innerHTML = `
+                            <div><label>Contract Number:</label> ${contractData.contractNumber}</div>
+                            <div><label>Email:</label> ${contractData.email}</div>
+                            <div><label>Contract Date:</label> ${contractData.contractDate}</div>
+                            <div><label>Quantity:</label> ${contractData.quantity}</div>
+                            <div><label>Installation Date:</label> ${contractData.installationDate}</div>
+                            <div><label>Finalization Date:</label> ${contractData.finalizationDate}</div>
+                            <div><label>Period:</label> ${contractData.period} Days</div>
+                            <div><label>Comments:</label> ${contractData.comments || 'No comments'}</div>
+                        `;
+                        modal.style.display = 'block';
+                    } else {
+                        alert('Contract not found');
+                    }
+                } catch (error) {
+                    alert('Error fetching contract details: ' + error.message);
+                }
+            }
+
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                try {
+                    const data = {
+                        contractNumber: document.getElementById("contract-number").value,
+                        email: document.getElementById("email").value,
+                        contractDate: document.getElementById("contract-date").value,
+                        quantity: document.getElementById("quantity").value,
+                        installationDate: document.getElementById("installation-date").value,
+                        finalizationDate: document.getElementById("finalization-date").value,
+                        period: document.getElementById("period").value,
+                        comments: document.getElementById("comments").value
+                    };
+
+                    await addDoc(collection(db, "info"), data);
+                    await createReminder(data);
+                    form.reset();
+                    loadData();
+                } catch (error) {
+                    alert("Error saving data: " + error.message);
+                }
+            });
+
+            async function createReminder(data) {
+                const reminderDate = new Date(data.installationDate);
+                reminderDate.setDate(reminderDate.getDate() + parseInt(data.period) - 7);
+
+                await addDoc(collection(db, "alert"), {
+                    contractNumber: data.contractNumber,
+                    email: data.email,
+                    reminderDate: reminderDate.toISOString().split("T")[0],
+                    finalizationDate: data.finalizationDate
+                });
+            }
+
+            async function loadReminders() {
+                try {
+                    alertsBox.innerHTML = "";
+                    const reminders = [];
+                    const alertsSnapshot = await getDocs(collection(db, "alert"));
+                    
+                    alertsSnapshot.forEach((doc) => {
+                        reminders.push(doc.data());
+                    });
+
+                    reminders.sort((a, b) => {
+                        const aOverdue = isOverdue(a.reminderDate);
+                        const bOverdue = isOverdue(b.reminderDate);
+                        
+                        if (aOverdue === bOverdue) {
+                            return new Date(a.reminderDate) - new Date(b.reminderDate);
+                        }
+                        return aOverdue ? 1 : -1;
+                    });
+
+                    reminders.forEach((reminder) => {
+                        const div = document.createElement("div");
+                        div.className = "reminder";
+                        
+                        if (isOverdue(reminder.reminderDate)) {
+                            div.classList.add("overdue");
+                        }
+
+                        div.innerHTML = `
+                            <strong>${reminder.contractNumber}</strong>: 
+                             Due on <span>${reminder.reminderDate}</span>`;
+                        div.onclick = () => showContractDetails(reminder.contractNumber);
+                        alertsBox.appendChild(div);
+                    });
+                } catch (error) {
+                    alert("Error loading reminders: " + error.message);
+                }
+            }
+
+            async function loadData() {
+                try {
+                    tableBody.innerHTML = "";
+                    const contracts = await getDocs(collection(db, "info"));
+                    
+                    contracts.forEach((doc) => {
+                        const data = doc.data();
+                        const row = tableBody.insertRow();
+                        row.innerHTML = `
+                            <td><span class="readonly-field">${data.contractNumber || ''}</span></td>
+                            <td><a href="mailto:${data.email}" class="email-link">${data.email || ''}</a></td>
+                            <td><input type="date" class="table-input" value="${data.contractDate || ''}"></td>
+                            <td><input type="number" class="table-input" value="${data.quantity || ''}"></td>
+                            <td><input type="date" class="table-input" value="${data.installationDate || ''}"></td>
+                            <td><input type="date" class="table-input" value="${data.finalizationDate || ''}"></td>
+                            <td>
+                                <select class="table-input">
+                                    <option value="30" ${data.period === "30" ? "selected" : ""}>30 Days</option>
+                                    <option value="60" ${data.period === "60" ? "selected" : ""}>60 Days</option>
+                                </select>
+                            </td>
+                            <td><textarea class="comment-input">${data.comments || ''}</textarea></td>
+                            <td><button onclick="saveRow('${doc.id}', this)">Save</button></td>
+                        `;
+                    });
+
+                    await loadReminders();
+                } catch (error) {
+                    alert("Error loading data: " + error.message);
+                }
+            }
+
+            window.saveRow = async (id, button) => {
+                try {
+                    const row = button.closest("tr");
+                    const data = {
+                        contractNumber: row.cells[0].textContent,
+                        email: row.cells[1].querySelector("a").textContent,
+                        contractDate: row.cells[2].querySelector("input").value,
+                        quantity: row.cells[3].querySelector("input").value,
+                        installationDate: row.cells[4].querySelector("input").value,
+                        finalizationDate: row.cells[5].querySelector("input").value,
+                        period: row.cells[6].querySelector("select").value,
+                        comments: row.cells[7].querySelector("textarea").value
+                    };
+
+                    await updateDoc(doc(db, "info", id), data);
+                    await createReminder(data);
+                    
+                    button.textContent = "✓ Saved";
+                    button.classList.add("save-success");
+                    setTimeout(() => {
+                        button.textContent = "Save";
+                        button.classList.remove("save-success");
+                    }, 2000);
+
+                    loadReminders();
+                } catch (error) {
+                    alert("Error updating data: " + error.message);
+                }
+            };
+
+            document.querySelector('.close-modal').onclick = function() {
+                modal.style.display = 'none';
+            };
+
+            window.onclick = function(event) {
+                if (event.target == modal) {
+                    modal.style.display = 'none';
+                }
+            };
+
+            loadData();
+        });
+    </script>
+</body>
+</html>
